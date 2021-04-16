@@ -2615,6 +2615,64 @@ class Shape_to_hash : public IntrinsicMethod {
     }
 } Shape_to_hash;
 
+// `<Magic>.<to-hash-dup>(x)` and `<Magic>.<to-hash-nodup>(x) both behave like `x.to_hash`
+class Magic_toHash : public IntrinsicMethod {
+public:
+    void apply(const GlobalState &gs, const DispatchArgs &args, DispatchResult &res) const override {
+        ENFORCE(args.args.size() == 1);
+
+        auto &arg = args.args[0];
+        InlinedVector<LocOffsets, 2> argLocs;
+        CallLocs locs{args.locs.file, args.locs.call, args.locs.call, argLocs};
+        InlinedVector<const TypeAndOrigins *, 2> innerArgs;
+
+        DispatchArgs dispatch{core::Names::toHash(),
+                              locs,
+                              0,
+                              innerArgs,
+                              arg->type,
+                              {arg->type, args.fullType.origins},
+                              arg->type,
+                              nullptr,
+                              args.originForUninitialized};
+        res = arg->type.dispatchCall(gs, dispatch);
+    }
+
+} Magic_toHash;
+
+// Interpret this intrinsic as chained calls to `.merge`
+class Magic_mergeHash : public IntrinsicMethod {
+    void apply(const GlobalState &gs, const DispatchArgs &args, DispatchResult &res) const override {
+        ENFORCE(args.args.size() >= 1);
+
+        res.returnType = args.args.front()->type;
+
+        // fold dispatching of `.merge` over the arguments, using the first argument as the initial receiver.
+        for (int i = 1; i < args.args.size(); i++) {
+            InlinedVector<const TypeAndOrigins *, 2> sendArgs;
+            InlinedVector<LocOffsets, 2> sendArgLocs;
+
+            sendArgs.emplace_back(args.args[i]);
+            sendArgLocs.emplace_back(args.locs.args[i]);
+
+            CallLocs sendLocs{args.locs.file, args.locs.call, args.locs.receiver, sendArgLocs};
+
+            // emulate a call to `resType#merge`
+            DispatchArgs mergeArgs{core::Names::merge(),
+                                   sendLocs,
+                                   1,
+                                   sendArgs,
+                                   res.returnType,
+                                   {res.returnType, args.args[i - 1]->origins},
+                                   res.returnType,
+                                   nullptr,
+                                   args.originForUninitialized};
+
+            res = res.returnType.dispatchCall(gs, mergeArgs);
+        }
+    }
+} Magic_mergeHash;
+
 class Array_flatten : public IntrinsicMethod {
     // If the element type supports the #to_ary method, then Ruby will implicitly call it when flattening. So here we
     // dispatch #to_ary and recurse further down the result if it succeeds, otherwise we just return the type.
@@ -2941,6 +2999,9 @@ const vector<Intrinsic> intrinsicMethods{
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::suggestType(), &Magic_suggestUntypedConstantType},
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::selfNew(), &Magic_selfNew},
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::splat(), &Magic_splat},
+    {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::toHashDup(), &Magic_toHash},
+    {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::toHashNoDup(), &Magic_toHash},
+    {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::mergeHash(), &Magic_mergeHash},
 
     {Symbols::DeclBuilderForProcsSingleton(), Intrinsic::Kind::Instance, Names::void_(), &DeclBuilderForProcs_void},
     {Symbols::DeclBuilderForProcsSingleton(), Intrinsic::Kind::Instance, Names::returns(),

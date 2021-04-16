@@ -597,6 +597,16 @@ public:
     }
 };
 
+ExpressionPtr buildHashLit(DesugarContext dctx, core::LocOffsets loc, Hash::ENTRY_store &&keys,
+                           Hash::ENTRY_store &&values) {
+    DuplicateHashKeyCheck duplicateKeyCheck{dctx};
+    for (auto &key : keys) {
+        duplicateKeyCheck.check(key);
+    }
+
+    return MK::Hash(loc, std::move(keys), std::move(values));
+}
+
 ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) {
     try {
         if (what.get() == nullptr) {
@@ -735,8 +745,8 @@ ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) 
                     auto args = MK::Local(loc, core::Names::fwdArgs());
                     auto argsSplat = MK::Send0(loc, std::move(args), core::Names::toA());
 
-                    auto kwargs = MK::Local(loc, core::Names::fwdKwargs());
-                    auto kwargsSplat = MK::Send0(loc, std::move(kwargs), core::Names::toHash());
+                    auto kwargsSplat = MK::Send1(loc, MK::Constant(loc, core::Symbols::Magic()),
+                                                 core::Names::toHashDup(), MK::Local(loc, core::Names::fwdKwargs()));
 
                     Array::ENTRY_store kwargsEntries;
                     kwargsEntries.emplace_back(std::move(kwargsSplat));
@@ -1534,6 +1544,13 @@ ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) 
                 values.reserve(hash->pairs.size()); // overapproximation in case there are KwSpats
                 ExpressionPtr lastMerge;
 
+                Send::ARGS_store mergeEntries;
+                mergeEntries.reserve(hash->pairs.size());
+
+                // Desguar
+                //   {**x, a: 'a', **y, remaining}
+                // into
+                //   <Magic>.<merge-hash>(<Magic>.<to-hash-dup>(y), {a: 'a'}, <Magic>.<to-hash-nodup>(x), remaining)
                 for (auto &pairAsExpression : hash->pairs) {
                     auto *pair = parser::cast_node<parser::Pair>(pairAsExpression.get());
                     if (pair != nullptr) {
@@ -1545,55 +1562,37 @@ ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) 
                         auto *splat = parser::cast_node<parser::Kwsplat>(pairAsExpression.get());
                         ENFORCE(splat != nullptr, "kwsplat cast failed");
 
-                        // Desguar
-                        //   {a: 'a', **x, remaining}
-                        // into
-                        //   {a: 'a'}.merge(x.to_h).merge(remaining)
-                        auto expr = MK::Send0(loc, node2TreeImpl(dctx, std::move(splat->expr)), core::Names::toHash());
-                        if (keys.empty()) {
-                            if (lastMerge != nullptr) {
-                                lastMerge = MK::Send1(loc, std::move(lastMerge), core::Names::merge(), std::move(expr));
+                        auto expr = node2TreeImpl(dctx, std::move(splat->expr));
+                        if (!keys.empty()) {
+                            mergeEntries.emplace_back(buildHashLit(dctx, loc, std::move(keys), std::move(values)));
 
-                            } else {
-                                lastMerge = std::move(expr);
-                            }
-                        } else {
-                            ExpressionPtr current = MK::Hash(loc, std::move(keys), std::move(values));
                             /* reassign instead of clear to work around https://bugs.llvm.org/show_bug.cgi?id=37553 */
                             keys = Hash::ENTRY_store();
                             values = Hash::ENTRY_store();
-
-                            if (lastMerge != nullptr) {
-                                lastMerge =
-                                    MK::Send1(loc, std::move(lastMerge), core::Names::merge(), std::move(current));
-                            } else {
-                                lastMerge = std::move(current);
-                            }
-                            lastMerge = MK::Send1(loc, std::move(lastMerge), core::Names::merge(), std::move(expr));
                         }
+
+                        // If this is the first argument to `<Magic>.<merge-hash>`, it needs to be duplicated as that
+                        // intrinsic is assumed to mutate its first argument.
+                        auto toHashMethod =
+                            mergeEntries.empty() ? core::Names::toHashDup() : core::Names::toHashNoDup();
+                        mergeEntries.emplace_back(
+                            MK::Send1(loc, MK::Constant(loc, core::Symbols::Magic()), toHashMethod, std::move(expr)));
                     }
                 };
 
-                DuplicateHashKeyCheck duplicateKeyCheck{dctx};
-                for (auto &key : keys) {
-                    duplicateKeyCheck.check(key);
+                if (!keys.empty()) {
+                    mergeEntries.emplace_back(buildHashLit(dctx, loc, std::move(keys), std::move(values)));
                 }
 
-                ExpressionPtr res;
-                if (keys.empty()) {
-                    if (lastMerge != nullptr) {
-                        res = std::move(lastMerge);
-                    } else {
-                        res = MK::Hash0(loc);
-                    }
+                if (mergeEntries.empty()) {
+                    result = MK::Hash0(loc);
+                } else if (mergeEntries.size() == 1) {
+                    result = std::move(mergeEntries.front());
                 } else {
-                    res = MK::Hash(loc, std::move(keys), std::move(values));
-                    if (lastMerge != nullptr) {
-                        res = MK::Send1(loc, std::move(lastMerge), core::Names::merge(), std::move(res));
-                    }
+                    auto numPosArgs = mergeEntries.size();
+                    result = MK::Send(loc, MK::Constant(loc, core::Symbols::Magic()), core::Names::mergeHash(),
+                                      numPosArgs, std::move(mergeEntries));
                 }
-
-                result = std::move(res);
             },
             [&](parser::IRange *ret) {
                 auto recv = MK::Constant(loc, core::Symbols::Magic());
