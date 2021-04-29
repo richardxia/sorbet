@@ -3,19 +3,19 @@ class <emptyTree><<C <root>>> < (::<todo sym>)
 
   {:a => "a"}
 
-  <self>.x().to_hash()
+  ::<Magic>.<to-hash-dup>(<self>.x())
 
   <self>.x()
 
-  {:a => "a"}.merge(<self>.x().to_hash())
+  ::<Magic>.<merge-hash>({:a => "a"}, ::<Magic>.<to-hash-nodup>(<self>.x()))
 
   {:a => "a"}.merge(<self>.x().to_hash())
 
-  <self>.x().to_hash().merge({:a => "a"})
+  ::<Magic>.<merge-hash>(::<Magic>.<to-hash-dup>(<self>.x()), {:a => "a"})
 
   <self>.x().to_hash().merge(:a, "a")
 
-  {:a => "a"}.merge(<self>.x().to_hash()).merge(<self>.y().to_hash()).merge({:b => "b", :c => "c"}).merge(<self>.y().to_hash()).merge({:d => "d"})
+  ::<Magic>.<merge-hash>({:a => "a"}, ::<Magic>.<to-hash-nodup>(<self>.x()), ::<Magic>.<to-hash-nodup>(<self>.y()), {:b => "b", :c => "c"}, ::<Magic>.<to-hash-nodup>(<self>.y()), {:d => "d"})
 
   {:a => "a"}.merge(<self>.x().to_hash()).merge(<self>.y().to_hash()).merge(:b, "b", :c, "c").merge(<self>.y().to_hash()).merge(:d, "d")
 end

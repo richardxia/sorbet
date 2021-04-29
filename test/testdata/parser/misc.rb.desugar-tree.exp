@@ -106,7 +106,7 @@ class <emptyTree><<C <root>>> < (::<todo sym>)
     <emptyTree>
   end
 
-  x.to_hash()
+  ::<Magic>.<to-hash-dup>(x)
 
   87
 
