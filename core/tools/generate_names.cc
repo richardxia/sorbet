@@ -328,6 +328,7 @@ NameDef names[] = {
     {"buildArray", "<build-array>"},
     {"buildRange", "<build-range>"},
     {"mergeHash", "<merge-hash>"},
+    {"mergeHashValues", "<merge-hash-values>"},
     {"toHashDup", "<to-hash-dup>"},
     {"toHashNoDup", "<to-hash-nodup>"},
     {"splat", "<splat>"},
