@@ -595,6 +595,12 @@ void GlobalState::initEmpty() {
                  .repeatedUntypedArg(Names::arg0())
                  .buildWithResultUntyped();
 
+    // Synthesize <Magic>.<merge-hash-values>(arg0: T.untyped, *arg1: T.untyped) => T.untyped
+    method = enterMethod(*this, Symbols::MagicSingleton(), Names::mergeHashValues())
+                 .untypedArg(Names::arg0())
+                 .repeatedUntypedArg(Names::arg ())
+                 .buildWithResultUntyped();
+
     // Synthesize <DeclBuilderForProcs>.<params>(args: T.untyped) => DeclBuilderForProcs
     method = enterMethod(*this, Symbols::DeclBuilderForProcsSingleton(), Names::params())
                  .kwsplatArg(Names::arg0())

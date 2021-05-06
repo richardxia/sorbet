@@ -2640,38 +2640,82 @@ public:
 
 } Magic_toHash;
 
-// Interpret this intrinsic as chained calls to `.merge`
+// Interpret this `<Magic>.<merge-hash>(a, b)` as `a.merge(b)`
 class Magic_mergeHash : public IntrinsicMethod {
     void apply(const GlobalState &gs, const DispatchArgs &args, DispatchResult &res) const override {
-        ENFORCE(args.args.size() >= 1);
+        ENFORCE(args.args.size() == 2);
 
-        res.returnType = args.args.front()->type;
+        auto accType = args.args.front()->type;
 
-        // fold dispatching of `.merge` over the arguments, using the first argument as the initial receiver.
-        for (int i = 1; i < args.args.size(); i++) {
-            InlinedVector<const TypeAndOrigins *, 2> sendArgs;
-            InlinedVector<LocOffsets, 2> sendArgLocs;
+        InlinedVector<const TypeAndOrigins *, 2> sendArgs;
+        InlinedVector<LocOffsets, 2> sendArgLocs;
 
-            sendArgs.emplace_back(args.args[i]);
-            sendArgLocs.emplace_back(args.locs.args[i]);
+        sendArgs.emplace_back(args.args[1]);
+        sendArgLocs.emplace_back(args.locs.args[1]);
 
-            CallLocs sendLocs{args.locs.file, args.locs.call, args.locs.receiver, sendArgLocs};
+        CallLocs sendLocs{args.locs.file, args.locs.call, args.locs.receiver, sendArgLocs};
 
-            // emulate a call to `resType#merge`
-            DispatchArgs mergeArgs{core::Names::merge(),
-                                   sendLocs,
-                                   1,
-                                   sendArgs,
-                                   res.returnType,
-                                   {res.returnType, args.args[i - 1]->origins},
-                                   res.returnType,
-                                   nullptr,
-                                   args.originForUninitialized};
+        // emulate a call to `resType#merge`
+        DispatchArgs mergeArgs{core::Names::merge(),
+                               sendLocs,
+                               1,
+                               sendArgs,
+                               accType,
+                               {accType, args.args[0]->origins},
+                               accType,
+                               nullptr,
+                               args.originForUninitialized};
 
-            res = res.returnType.dispatchCall(gs, mergeArgs);
-        }
+        res = res.returnType.dispatchCall(gs, mergeArgs);
     }
 } Magic_mergeHash;
+
+// Interpret this `<Magic>.<merge-hash-values>(a, k: v, ...)` as `a.merge({k: v, ...})`
+class Magic_mergeHashValues : public IntrinsicMethod {
+    void apply(const GlobalState &gs, const DispatchArgs &args, DispatchResult &res) const override {
+        // Argument format is
+        // 0 - the hash to merge values into
+        // 1 - the first key
+        // 2 - the first value
+        // ...
+        ENFORCE(args.args.size() % 2 == 1);
+
+        auto accType = args.args.front()->type;
+
+        vector<TypePtr> keys;
+        vector<TypePtr> values;
+        for (auto it = args.args.begin() + 1; it != args.args.end(); ) {
+            auto *key = *it++;
+            auto *value = *it++;
+            keys.emplace_back(key->type);
+            values.emplace_back(value->type);
+        }
+
+        auto shape = make_type<ShapeType>(keys, values);
+
+        InlinedVector<const TypeAndOrigins *, 2> sendArgs;
+        InlinedVector<LocOffsets, 2> sendArgLocs;
+
+        TypeAndOrigins argument{shape, {}};
+        sendArgs.emplace_back(&argument);
+        sendArgLocs.emplace_back(args.locs.args[1]);
+
+        CallLocs sendLocs{args.locs.file, args.locs.call, args.locs.receiver, sendArgLocs};
+
+        // emulate a call to `resType#merge` with a shape argument
+        DispatchArgs mergeArgs{core::Names::merge(),
+                               sendLocs,
+                               1,
+                               sendArgs,
+                               accType,
+                               {accType, args.args[0]->origins},
+                               accType,
+                               nullptr,
+                               args.originForUninitialized};
+
+        res = res.returnType.dispatchCall(gs, mergeArgs);
+    }
+} Magic_mergeHashValues;
 
 class Array_flatten : public IntrinsicMethod {
     // If the element type supports the #to_ary method, then Ruby will implicitly call it when flattening. So here we
@@ -3002,6 +3046,7 @@ const vector<Intrinsic> intrinsicMethods{
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::toHashDup(), &Magic_toHash},
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::toHashNoDup(), &Magic_toHash},
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::mergeHash(), &Magic_mergeHash},
+    {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::mergeHash(), &Magic_mergeHashValues},
 
     {Symbols::DeclBuilderForProcsSingleton(), Intrinsic::Kind::Instance, Names::void_(), &DeclBuilderForProcs_void},
     {Symbols::DeclBuilderForProcsSingleton(), Intrinsic::Kind::Instance, Names::returns(),

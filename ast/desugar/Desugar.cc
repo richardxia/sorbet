@@ -1621,12 +1621,10 @@ ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) 
                         keys.reserve(mergeValues.size() / 2);
                         values.reserve(mergeValues.size() / 2);
 
-                        // increment over the first positional argument for the accumulator that would have been mutated
+                        // skip the first positional argument for the accumulator that would have been mutated
                         for (auto it = mergeValues.begin()+1; it != mergeValues.end();) {
-                            keys.emplace_back(std::move(*it));
-                            it++;
-                            values.emplace_back(std::move(*it));
-                            it++;
+                            keys.emplace_back(std::move(*it++));
+                            values.emplace_back(std::move(*it++));
                         }
 
                         result = MK::Hash(loc, std::move(keys), std::move(values));
