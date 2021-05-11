@@ -2666,11 +2666,11 @@ class Magic_mergeHash : public IntrinsicMethod {
                                nullptr,
                                args.originForUninitialized};
 
-        res = res.returnType.dispatchCall(gs, mergeArgs);
+        res = accType.dispatchCall(gs, mergeArgs);
     }
 } Magic_mergeHash;
 
-// Interpret this `<Magic>.<merge-hash-values>(a, k: v, ...)` as `a.merge({k: v, ...})`
+// Interpret this `<Magic>.<merge-hash-values>(a, k, v, ...)` as `a.merge({k => v, ...})`
 class Magic_mergeHashValues : public IntrinsicMethod {
     void apply(const GlobalState &gs, const DispatchArgs &args, DispatchResult &res) const override {
         // Argument format is
@@ -2713,7 +2713,7 @@ class Magic_mergeHashValues : public IntrinsicMethod {
                                nullptr,
                                args.originForUninitialized};
 
-        res = res.returnType.dispatchCall(gs, mergeArgs);
+        res = accType.dispatchCall(gs, mergeArgs);
     }
 } Magic_mergeHashValues;
 
@@ -3046,7 +3046,7 @@ const vector<Intrinsic> intrinsicMethods{
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::toHashDup(), &Magic_toHash},
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::toHashNoDup(), &Magic_toHash},
     {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::mergeHash(), &Magic_mergeHash},
-    {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::mergeHash(), &Magic_mergeHashValues},
+    {Symbols::Magic(), Intrinsic::Kind::Singleton, Names::mergeHashValues(), &Magic_mergeHashValues},
 
     {Symbols::DeclBuilderForProcsSingleton(), Intrinsic::Kind::Instance, Names::void_(), &DeclBuilderForProcs_void},
     {Symbols::DeclBuilderForProcsSingleton(), Intrinsic::Kind::Instance, Names::returns(),

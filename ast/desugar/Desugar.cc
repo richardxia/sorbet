@@ -600,14 +600,6 @@ public:
             duplicateKeyCheck.check(args[i]);
         }
     }
-
-    static void checkHashLit(DesugarContext dctx, const Hash::ENTRY_store &keys,
-                      const Hash::ENTRY_store &values) {
-        DuplicateHashKeyCheck duplicateKeyCheck{dctx};
-        for (auto &key : keys) {
-            duplicateKeyCheck.check(key);
-        }
-    }
 };
 
 ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) {
@@ -1541,8 +1533,6 @@ ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) 
                 result = std::move(res);
             },
             [&](parser::Hash *hash) {
-                ExpressionPtr lastMerge;
-
                 InsSeq::STATS_store updateStmts;
                 updateStmts.reserve(hash->pairs.size());
 
@@ -1581,14 +1571,18 @@ ExpressionPtr node2TreeImpl(DesugarContext dctx, unique_ptr<parser::Node> what) 
                         if (hashLitPresent) {
                             hashLitPresent = false;
 
+                            // ensure that there's something to update
+                            if (updateStmts.empty()) {
+                                updateStmts.emplace_back(MK::Assign(loc, acc, MK::Hash0(loc)));
+                            }
+
                             int numPosArgs = mergeValues.size();
                             updateStmts.emplace_back(MK::Assign(loc, acc,
                                                                 MK::Send(loc, MK::Constant(loc, core::Symbols::Magic()),
                                                                          core::Names::mergeHashValues(), numPosArgs,
                                                                          std::move(mergeValues))));
 
-                            /* reassign instead of clear to work around https://bugs.llvm.org/show_bug.cgi?id=37553 */
-                            mergeValues = Send::ARGS_store();
+                            mergeValues.clear();
                             mergeValues.emplace_back(MK::Local(loc, acc));
                         }
 
